@@ -164,12 +164,9 @@ class Coherencer(object):
     second index would have the average for term3.
     
     """
-    for term in self.selTerms:
-      self.termTotals[term] = []
-      x = 0
-      while x < self.matrixDegree:
-        self.termTotals[term].append(0)
-        x = x+1
+    d = self.matrixDegree
+    self.termTotals = dict((term, [0 for x in range(d)])
+                           for term in self.selTerms)
 
   def testTuple(self, val):
     """Ensures you only get relevant value.
@@ -184,9 +181,9 @@ class Coherencer(object):
     val (tuple or int) -- the value corresponding to a database query
     
     """
-    if type(val) == tuple:
+    try:
       return val[1]
-    else:
+    except TypeError:
       return val
 
   def buildMatrix(self, theDict, val, degree):
@@ -197,8 +194,7 @@ class Coherencer(object):
 
     Keyword arguments:
     theDict (dict) -- holds a dictionary at various depths of the matrix in
-    order to build
-    the new matrix. The starting value is self.matrix = {}
+    order to build the new matrix. The starting value is self.matrix = {}
     val (dict) --  holds a dictionary at various depths of the original
     database in order to get the corresponding value. The starting value is
     self.db
@@ -252,7 +248,7 @@ class Coherencer(object):
         #the multidimensional matrix.
         val = self.totalTermVals(theDict[term], (degree-1))
         self.termTotals[term][avgsCell] = self.termTotals[term][avgsCell]+val
-        total = total+val
+        total += val
       return total
     else:
       for term in self.selTerms:
@@ -260,22 +256,21 @@ class Coherencer(object):
         #dictionary call.
         self.termTotals[term][avgsCell] = \
          self.termTotals[term][avgsCell]+theDict[term]
-        total = total + theDict[term]
+        total += theDict[term]
       return total
 
   def setTotalAvg(self):
     """Computes the total average of termTotals.
 
     """
-    #Subtract one to ignore when the term is co-occurring with itself
-    num = self.numTerms+len(self.queries)-1
+    num = self.numTerms
     #Multiply by the matrix degree in order to accommodate using the term in
     #each dimension e.g., columns and rows in 2D
-    num = num*num*self.matrixDegree
-    for term in self.selTerms:
-      for x in self.termTotals[term]:
-        self.totalAvg = self.totalAvg+x
-    self.totalAvg = self.totalAvg/num
+    #num-1 because a 4x4 matrix, ignoring diagonals is equivalent to a 4x3
+    num = num*(num-1)*self.matrixDegree
+    self.totalAvg = sum([x for term in self.selTerms
+                         for x in self.termTotals[term]])
+    self.totalAvg /= num
 
   def filterMatrix(self, regulatoryFn):
     """Determines outlier term (currently lowest) and removes it.
@@ -302,8 +297,10 @@ class Coherencer(object):
     remAvg = regulatoryFn(rvrsdAvgs.keys())
     remTerm = rvrsdAvgs[remAvg]
     for term in self.selTerms:
-      if remTerm in self.matrix[term]:
+      try:
         del self.matrix[term][remTerm]
+      except KeyError:
+        pass
     del self.matrix[remTerm]
     self.selTerms.remove(remTerm)
     self.remTerms.append(remTerm)
@@ -317,8 +314,7 @@ class Coherencer(object):
     """Determines coherent set of terms and returns or False if impossible.
 
     All of the functions, besides the initial setup, are strung together here
-    and looped recursively in order to find the selection of terms that meet
-    the threshold.
+    and looped in order to find the selection of terms that meet the threshold.
 
     Keyword arguments:
     default (bool) -- set to False except in testing; causes defaults to run
@@ -358,7 +354,7 @@ class Coherencer(object):
     if num:
       self.buildTermsToProc(num)
     results = []
-    ##avgs = []
+    #avgs = []
     for term in self.termsToProc:
       self.setParams([term], numTerms=nTerms, threshold=t)
       #To seed with topN
@@ -367,7 +363,7 @@ class Coherencer(object):
       results.append(self.ask(False))
       #avgs.append(self.totalAvg)
       self.reset()
-    return results ##, avgs
+    return results#, avgs
 
   def calcTopN(self, nTerms, num=False):
     """Performs 'num' cycles of top co-occurrence search and returns results.
@@ -511,7 +507,7 @@ class Main(object):
     """Runs each of the algorithms.
 
     Keyword arguments:
-    numTerms (int) -- number of associate terms per query
+    numTerms (int) -- number of associated terms per query
     numQueries (int) -- number of individual queries per round
     numTimes (int) -- number of rounds
 
@@ -524,8 +520,8 @@ class Main(object):
       resRnd1 = self.coh.rndmN(numTerms, True)
       resRnd2 = self.coh.rndmN(numTerms, False)
       resTopN = self.coh.calcTopN(numTerms)
-      resNew1 = self.coh.askCycle(numTerms+1, 0.27, False)
-      resNew2 = self.coh.askCycle(numTerms+1, 0.27, True)
+      resNew1 = self.coh.askCycle(numTerms+1, 0.37, False) 
+      resNew2 = self.coh.askCycle(numTerms+1, 0.37, True) #0.36 for n = 4
 
       totRnd1 = self.com.test(resRnd1)
       totRnd2 = self.com.test(resRnd2)
@@ -533,6 +529,23 @@ class Main(object):
       totNew1 = self.com.test(resNew1)
       totNew2 = self.com.test(resNew2)
 
+      self.coh.reset()
+
       print f.format(totRnd1, totRnd2, totTopN, totNew1, totNew2)
-    
-    
+
+if __name__ == '__main__':
+  m = Main()
+#  m.run(6, 1000, 20)
+
+##########
+##For Testing purposes
+
+  t = 0.25
+  while t < 0.45:
+    a = []
+    for x in range(100):
+      r = m.coh.askCycle(4, t, True, 1000)
+      a.append(m.com.test(r))
+    print t, sum(a)/100, max(a), min(a)
+    t += 0.01
+##########
