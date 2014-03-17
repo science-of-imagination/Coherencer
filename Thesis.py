@@ -14,6 +14,7 @@
 #You should have received a copy of the GNU General Public License
 #along with this program.  If not, see http://www.gnu.org/licenses/
 ###############################################################################
+
 """
 Masters thesis project that iteratively creates contextually 'coherent' sets
 of labels from a co-occurrence matrix. The matrix is built from a training set
@@ -23,77 +24,61 @@ generation of images and 3D scenes.
 
 Classes:
 Coherencer() -- algorithms for generating coherent sets given query
-Comparer() -- test algorithms
-Main() -- faster use case of other two classes
+Comparer()   -- test algorithms
+Main()       -- faster use case of other two classes
+
 
 """
 
-import os
-import random
-import pickle
+import random, pickle, numpy
 
 class Coherencer(object):
-  """Designed to select co-occurring terms from the database given a query.
+  """Generates a coherent selection of labels from the database given a query.
 
   The class accounts for coherence by setting a threshold that the average
   co-occurrence for the selections must pass. It is an iterative approach.
-  It also contains algorithms for Top N search and two random searches:
-  global (full random) and local (random of terms that co-occur).
+  It also contains algorithms for Top N search.
 
   Public functions:
   ***Argument names are designed to be illustrative and may be different but
   similar in the actual function***
-  reset()
   loadDB(path)
-  buildTermsToProc(numberOfTermsToTest)
-  setParams(queries, numTermsPerQuery, threshold, matrixDegree)
+  reset()
+  setParams(queries, numTermsPerQuery, threshold, seedTrue)
   ask(default)
+  runLoop(numOfTermsToTest, query, threshold)
+  buildTermsToProc(numberOfTermsToTest)
   askCycle(numCycles, numTermsPerQuery, threshold, seedWithTop)
   calcTopN(numCycles, numTermsPerQuery)
-  rndmN(numCycles, numTermsPerQuery, fullRandom)
   
   """
+  def __init__(self, path='D:\\pkb_matrix_sept2013-2'):
+    """Initializes the necessary components.
 
-  def __init__(self):
-    """Initializes all the necessary components.
+    Keyword arguments:
+    path (str) -- the path to the database ***Windows ONLY***
 
-    db (dict of dicts) -- original Peekaboom database of frequency counts
-    queries (list) -- list of terms that co-occurrence search is based off of
-    numTerms (int) -- number of terms to get COUNTING THE QUERY
-    threshold (float) -- necessary average correlation value for co-occurrence
-    set acceptance
-    matrix (dict of dicts) -- correlation matrix for the selected terms and the
-    query
-    matrixDegree (int) -- maximum degree of the matrix needed for the coherence
-    check (i.e., 2D, 3D, 4D matrix, etc.) - Not used as yet.
+    db (dict of dicts) -- original Peekaboom database of co-occurrence
+                          probabilities
+    termsToProc (list) -- random list of queries
+
+    reset() initializes remaining components:
+    queries (list) -- list of terms that search is based off of
+    numTerms (int) -- number of terms to get COUNTING the QUERY
+    threshold (float) -- necessary average co-occurrence probability for
+                         coherence
     coTerms (list) -- terms that co-occur with the query
     selTerms (list) --  terms that were selected from the coTerms
-    remTerms (list) --  terms that were removed in order to raise the average
-    correlation value and increase coherence
-    termTotals (dict of lists) -- average correlation for the row and column
-    corresponding to each term in a list [row, column]
-    totalAvg (float) --  total average correlation for the current selection
-    termsToProc (list) -- random list of queries
-    
+    totals (numpy array) -- average co-occurrence probability for row and column
+    best (tuple) -- the selection with the highest co-occurrence probability so
+                    far
+
     """
-    self.db = self.loadDB()
+    self.db = self.loadDB(path)
     self.reset()
     self.termsToProc = []
 
-  def reset(self):
-    """Resets all internal variables to start values."""
-    self.queries = []
-    self.numTerms = 0
-    self.threshold = 0.0
-    self.matrix = {}
-    self.matrixDegree = 0
-    self.coTerms = []
-    self.selTerms = []
-    self.remTerms = []
-    self.termTotals = {}
-    self.totalAvg = 0.0
-    
-  def loadDB(self, path="D:\\pkb_matrix_train_split1"):
+  def loadDB(self, path):
     """Loads nested dictionary of terms from path defaulting to my location.
 
     Keyword arguments:
@@ -104,325 +89,295 @@ class Coherencer(object):
       db = pickle.load(f)
     return db
 
-  def buildTermsToProc(self, num):
-    """Selects a random list of terms for processing of size 'num'."""
-    self.termsToProc = []
-    keys = self.db.keys()
-    for x in range(num):
-      self.termsToProc.append(random.choice(keys))
+  def reset(self):
+    """Resets relevant internal variables to start values."""
     
-  def setParams(self, queries=['party'], numTerms=5, threshold=0.27,
-                matrixDegree=2):
+    self.queries = []
+    self.numTerms = 0
+    self.threshold = 0.0
+##    self.sThreshold = 0.0
+    self.coTerms = []
+    self.selTerms = []
+    self.totals = []
+##    self.sTotals = []
+##    self.filterType = None
+    self.best = (0, [])
+
+  def buildPool(self, queries):
+    """Returns pool of co-occurring terms that will be searched in.
+
+    Keyword Arguments:
+    queries (list) -- the strings that should be queried
+
+    """
+    pool = set(queries)
+    #iterating the algorithm below increases the edge depth for search
+    pool |= set([x for y in pool for x in self.db[y].keys()])
+    #pool |= set([x for y in pool for x in self.db[y].keys()])
+    pool = [x for x in pool if x not in queries]
+    return pool
+
+  def selectTerms(self, seed):
+    """Gets seeded or random selection of terms from pool and returns list.
+
+    Keyword Arguments:
+    seed (bool) -- indicates if the model should be seeded with the top-n
+                   co-occurring terms
+
+    """
+    if seed:
+      sample = self.topN(self.queries, self.numTerms)
+    else:
+      sample = random.sample(self.coTerms, self.numTerms-len(self.queries))
+    self.coTerms = [x for x in self.coTerms if x not in sample]
+    return sample
+
+
+
+  def setParams(self, queries=['party'], numTerms=5, threshold=0.23, seed=True):
     """Sets up all the information needed to make a query.
 
     Keyword arguments:
     queries (list) -- the strings that should be queried
     numTerms (int) -- number of terms to gather including queries
     threshold (float) -- value at which a set of co-occurring terms are
-    considered coherent; 0.27 was tested to be best with Peekaboom
-    matrixDegree -- the depth of the database and corresponding comparison;
-    leave at 2; designed for future functionality (triplet or higher testing)
+                         considered coherent
+    seed (bool) -- indicates if the model should be seeded with the top-n
+                   co-occurring terms
     
     """
     self.queries = queries
     self.selTerms.extend(queries)
     self.numTerms = numTerms
     self.threshold = threshold
-    self.matrixDegree = matrixDegree
-    for query in queries:
-      self.coTerms.extend(self.db[query].keys())
+##    self.sThreshold = sThreshold
+    self.coTerms = self.buildPool(self.queries)
+    self.selTerms.extend(self.selectTerms(seed))
+    self.fill()
 
-  def selectTerms(self):
-    """Randomly selects a number of terms from co-occurring terms.
 
-    ***Currently only used for replacement; not initial seed.***
-    Limits number of terms selected for speed.
-    Another variable that can be manipulate for future paper.
+  def fill(self):
+    """Returns a co-occurrence matrix with the diagonal masked.
 
-    """
-    #I use xrange in order to optimize for queries with coTerms < numTerms
-    #and/or queries with low cooccurrence average and hence require multiple
-    #iterations of selectTerms(). The subtraction is so that this function can
-    #be reused for selecting a new term when filtering.
-    for x in xrange((self.numTerms-len(self.selTerms))):
-      if len(self.coTerms) <= 0:
-        return False
-      sel = random.choice(self.coTerms)
-      self.selTerms.append(sel)
-      self.coTerms.remove(sel)
-    return True
-
-  def setupTermTotals(self):
-    """Sets up the dictionary for the averages of each term.
-
-    Each term has a list whose indices correspond to the average the term gets
-    in each corresponding position in a matrix call.
-    e.g., if a value call is self.matrix[term1][term2][term3]
-    then, for a particular term, its zero index would have the average it got
-    of all values that occur when it is in the place of term1 its first index
-    would have the average for all the values in the place of term2 and its
-    second index would have the average for term3.
+    This builds a numpy matrix of the co-occurrence probabilities. The diagonal
+    is masked to ignore term co-occurrence with itself.
     
     """
-    d = self.matrixDegree
-    self.termTotals = dict((term, [0 for x in range(d)])
-                           for term in self.selTerms)
+    self.matrix = numpy.zeros([self.numTerms, self.numTerms])
+    for i, term in enumerate(self.selTerms):
+      for i2, term2 in enumerate(self.selTerms):
+        try:
+          val = self.db[term][term2]
+        except KeyError:
+          pass
+        else:
+          self.matrix[i][i2] = val
+        try:
+          val = self.db[term2][term]
+        except KeyError:
+          pass
+        else:
+          self.matrix[i2][i] = val
+    self.matrix = numpy.ma.masked_equal(self.matrix, -1)
 
-  def testTuple(self, val):
-    """Ensures you only get relevant value.
+  #generic of above function:
+  def mat(self, terms):
+    """Generic version of fill().
 
-    This is an artifact of the way I made the original database:
-    I kept both the frequency of the co-occurrence as well as the average in a
-    tuple. The thought was that the base frequency might be another filtering
-    point: A frequency of 0.1 is slightly different if it occurred 1 / 10
-    versus 100 / 1000.
+    In this version, the relevant terms must be input directly. Not used in the
+    current implementation
 
-    Keyword arguments:
-    val (tuple or int) -- the value corresponding to a database query
+    Keyword Arguments:
+    terms (list) -- the current selected terms
     
     """
-    try:
-      return val[1]
-    except TypeError:
-      return val
+    matrix = numpy.zeros([len(terms), len(terms)])
+    for i, term in enumerate(terms):
+      for i2, term2 in enumerate(terms):
+        try:
+          val = self.db[term][term2]
+        except KeyError:
+          pass
+        else:
+          matrix[i][i2] = val
+        try:
+          val = self.db[term2][term]
+        except KeyError:
+          pass
+        else:
+          matrix[i2][i] = val
+    matrix = numpy.ma.masked_equal(matrix, -1)
+    return matrix
 
-  def buildMatrix(self, theDict, val, degree):
-    """Builds the matrix of correlations for the current selected terms.
+  def assess(self):
+    """Returns true if mean co-occurrence of matrix is greater than threshold.
 
-    The co-occurrence of a term with itself is set to 0 and ignored in further
-    calculations.
-
-    Keyword arguments:
-    theDict (dict) -- holds a dictionary at various depths of the matrix in
-    order to build the new matrix. The starting value is self.matrix = {}
-    val (dict) --  holds a dictionary at various depths of the original
-    database in order to get the corresponding value. The starting value is
-    self.db
-    degree (int) -- holds the remaining number of degrees lower than the
-    current degree of the matrix. The degree must correspond with the given
-    database or all of the values will come up as 0. The starting value is
-    self.matrixDegree
-    """
-    for term in self.selTerms:
-      #This is how I am testing to see if there is another layer to the
-      #database. If there is, the current contents of val will be a dict.
-      if type(val) == dict:
-        #Use get() because not all combinations exist in the database.
-        newVal = val.get(term, 0)
-      else:
-        newVal = val
-      #Checks to see if the matrix being built has another level of depth
-      #necessary.
-      if degree > 1:
-        #In order to provide another level, the current term is made a
-        #dictionary key.
-        theDict[term] = {}
-        #And, the function is recursively called with this new key, the new
-        #value that corresponds in the database (either a dictionary if the
-        #terms co-occur or 0), and with the remaining degrees of the matrix
-        #left to be built.
-        self.buildMatrix(theDict[term], newVal, (degree-1))
-      else:
-        #If there are no more degrees left to be built, assign the value that
-        #was grabbed from the database.
-        theDict[term] = self.testTuple(newVal)
-
-  def totalTermVals(self, theDict, degree):
-    """Recursive function that adds all values for terms in matrix.
-
-    Keyword arguments:
-    theDict (dict of dicts) -- increasingly small pieces of the matrix starting
-    with the whole thing
-    degree (int) -- the depth of the matrix current in; starts equal to
-    matrixDegree
+    The algorithm tests the mean co-occurrence probability of all pairs of terms
+    against the threshold. It also checks whether this set is better than the
+    current best set and stores it as such if it is.
     
     """
-    #This makes sure that the correct cell is filled in the term's list of
-    #averages.
-    avgsCell = self.matrixDegree-degree
-    total = 0
-    if degree > 1:
-      for term in self.selTerms:
-        #This makes the recursive call that will both get the value and add it
-        #to each corresponding level for each term the value corresponds to in
-        #the multidimensional matrix.
-        val = self.totalTermVals(theDict[term], (degree-1))
-        self.termTotals[term][avgsCell] = self.termTotals[term][avgsCell]+val
-        total += val
-      return total
+    self.totals = numpy.sum(self.matrix, 0) + numpy.sum(self.matrix, 1)
+    total = numpy.mean(self.matrix)
+    if total > self.best[0]:
+      self.best = (total, self.selTerms)
+    if total > self.threshold:
+##      self.sTotals = numpy.std(self.matrix, 0) + numpy.std(self.matrix, 1)
+##      total2 = numpy.std(self.matrix)
+##      if total2 < self.sThreshold:
+      return True
+##      else:
+##        self.filterType = 'std'
+##        return False
     else:
-      for term in self.selTerms:
-        #This adds the co-occurrence value to last term in the recursive
-        #dictionary call.
-        self.termTotals[term][avgsCell] = \
-         self.termTotals[term][avgsCell]+theDict[term]
-        total += theDict[term]
-      return total
+##      self.filterType = 'avg'
+      return False
 
-  def setTotalAvg(self):
-    """Computes the total average of termTotals.
 
-    """
-    num = self.numTerms
-    #Multiply by the matrix degree in order to accommodate using the term in
-    #each dimension e.g., columns and rows in 2D
-    #num-1 because a 4x4 matrix, ignoring diagonals is equivalent to a 4x3
-    num = num*(num-1)*self.matrixDegree
-    self.totalAvg = sum([x for term in self.selTerms
-                         for x in self.termTotals[term]])
-    self.totalAvg /= num
 
-  def filterMatrix(self, regulatoryFn):
-    """Determines outlier term (currently lowest) and removes it.
+  def filter_(self):
+    """Determines term with the lowest row and column co-occurrence and removes.
 
-    It then sets up the data for a new cycle by resetting the matrix and total
-    variables.
-
-    Keyword arguments:
-    regulatoryFn (function) -- takes a function that returns a term from a list
-    for removal such that the matrix moves towards the threshold in the
-    appropriate fashion.
+    This algorithm removes the most unrelated term and then gets another term
+    from the pool. This term is then removed from the pool and stored in
+    the list of selected terms. The function then returns True. If there are no
+    further terms in the pool, it returns False.
     
     """
-    rvrsdAvgs = {}
-    #I believe this method will naturally overwrite any terms with the same
-    #probability. This is advantageous because we only get one term, but sloppy
-    #because it's unpredictable which term is kept (the last one?). There is a
-    #way to get around this if I don't collapse the row and col term averages
-    #and, instead, turn them into a tuple. The tuple could then be used as a
-    #dictionary key that is a lot less likely to occur more than once.
-    for term in self.termTotals:
-      rvrsdAvgs[((self.termTotals[term][0]+self.termTotals[term][1])
-                 / 2)] = term
-    remAvg = regulatoryFn(rvrsdAvgs.keys())
-    remTerm = rvrsdAvgs[remAvg]
-    for term in self.selTerms:
-      try:
-        del self.matrix[term][remTerm]
-      except KeyError:
-        pass
-    del self.matrix[remTerm]
-    self.selTerms.remove(remTerm)
-    self.remTerms.append(remTerm)
-    self.matrix = {}
-    self.termTotals = {}
-    self.totalAvg = 0
-    
-    
+##    if self.filterType == 'avg':
+    vals = [x for x in self.totals]
+    r = False
+##    else:
+##      vals = [x for x in self.sTotals]
+##      r = True
+    vals = zip(self.selTerms, vals)
+    vals = sorted(vals, key=lambda x: x[1], reverse=r)
+    self.selTerms.remove(vals[0][0])
+    try:
+      sel = random.choice(self.coTerms)
+    except IndexError:
+      return False
+    else:
+      self.coTerms.remove(sel)
+      self.selTerms.append(sel)
+      return True
 
   def ask(self, default=True):
-    """Determines coherent set of terms and returns or False if impossible.
+    """Determines a coherent set of terms or the most coherent set then returns.
 
-    All of the functions, besides the initial setup, are strung together here
-    and looped in order to find the selection of terms that meet the threshold.
+    The term with the most co-occurring terms has less than 3000 so the for
+    loop effectively makes sure that the entire pool is searched.
 
     Keyword arguments:
-    default (bool) -- set to False except in testing; causes defaults to run
+    default (bool) -- set to False except when testing; causes defaults to run
+    
     """
     if default:
       self.reset()
       self.setParams()
-    #I switched to a for statement with lazy sequence generation over a tail
-    #call to ask() in order to optimize and protect from stack overflow.
     for x in xrange(5000):
-      if self.selectTerms():
-        self.buildMatrix(self.matrix, self.db, self.matrixDegree)
-        self.setupTermTotals()
-        self.totalTermVals(self.matrix, self.matrixDegree)
-        self.setTotalAvg()
-        if self.totalAvg >= self.threshold:
-          return self.selTerms
-        else:
-          #Currently, the class only regulates by removing minimum values.
-          self.filterMatrix(min)
+      if self.assess():
+        return self.selTerms
       else:
-        break
-    return False
-    #print "There is no combination of terms that satisfies this threshold."
-    
-  def askCycle(self, nTerms, t, seed, num=False):
+        if self.filter_():
+          self.fill()
+        else:
+          return self.best[1]
+
+  def runLoop(num, query, t=0.23):
+    """Runs the model once with the given parameters.
+
+    This function is really for the SOILIE model.
+
+    Keyword Arguments:
+    num (int) -- the number of terms to be selected
+    query (string) -- a single string query
+    t (float) -- the co-occurrence threshold
+
+    """
+    self.reset()
+    self.setParams([query], num, t)
+    terms = self.ask(False)
+    return terms
+
+  def buildTermsToProc(self, num):
+    """Selects a random list of terms for processing.
+
+    Keyword Arguments:
+    num (int) -- number of terms to select
+
+    """
+    self.termsToProc = [x for x in random.sample(self.db.keys(), num)]
+
+  def askCycle(self, numTerms=5, threshold=0.23, #sThreshold=10,
+               seed=True, num=False):
     """Performs 'num' cycles of ask() and returns results.
 
     Keyword arguments:
+    numTerms (int) -- number of associated terms in result INCLUDING query
+    threshold (float) -- value at which a set of co-occurring terms are
+                         considered coherent
+    seed (bool) -- indicates if the model should be seeded with the top-n
+                   co-occurring terms
     num (int) -- number of cycles; if False, terms are selected elsewhere
-    nTerms (int) -- number of associated terms in result INCLUDING query
-    t (float) -- threshold
-    seed (bool) -- determines whether to seed initial results with top
-    co-occurrences of query
 
     """
     if num:
       self.buildTermsToProc(num)
     results = []
-    #avgs = []
     for term in self.termsToProc:
-      self.setParams([term], numTerms=nTerms, threshold=t)
-      #To seed with topN
-      if seed:
-        self.selTerms.extend(self.topN(term, nTerms))
-      results.append(self.ask(False))
-      #avgs.append(self.totalAvg)
+      if len(self.db[term].keys()) < numTerms-1:
+        temp = [term]
+        temp.extend(self.db[term].keys())
+        results.append(temp)
+      else:
+        self.setParams([term], numTerms, threshold, seed)
+        results.append(self.ask(False))
       self.reset()
-    return results#, avgs
-
-  def calcTopN(self, nTerms, num=False):
-    """Performs 'num' cycles of top co-occurrence search and returns results.
-
-    Keyword arguments:
-    num (int) -- number of cycles; if False, terms are selected elsewhere
-    nTerms (int) -- number of associated terms in result EXCLUDING query
-    
-    """
-    if num:
-      self.buildTermsToProc(num)
-    results = []
-    for term in self.termsToProc:
-      ls = self.topN(term, nTerms)
-      ls.append(term)
-      results.append(ls)
     return results
 
-  def topN(self, term, nTerms):
+  def topN(self, terms, numTerms):
     """Calculates top co-occurring terms and returns them.
 
     Keyword arguments:
-    term (str) -- query or term that's being associated to
-    nTerms (int) -- number of associated terms EXCLUDING query
+    terms (list) -- queries or terms that are being associated to
+    numTerms (int) -- number of associated terms INCLUDING query
     
     """
-    temp = self.db[term]
-    ls = sorted(temp, key=lambda label: temp[label], reverse=True)[:nTerms]
-    return ls
+    store = []
+    for term in terms:
+      temp = self.db[term]
+      ls = sorted(temp, key=lambda label: temp[label],
+                  reverse=True)[:numTerms-1]
+      store.append(ls)
+    if len(store) > 1:
+      #Tries to take common terms and if that fails adds with random selection
+      #Might be better to go with topN of highest common co-occurring terms
+      #Better to sum co-occurrence with each query for each coTerm
+      temp = set(store[0])
+      for x in store[1:]:
+        temp &= set(x)
+      temp |= set(random.sample([x for y in store for x in y],
+                                numTerms-len(temp)))
+      store[0] = [x for x in temp]
+    return store[0]
 
-  def rndmN(self, nTerms, fullRandom, num=False):
-    """Performs 'num' cycles of random search and returns results.
+  def calcTopN(self, numTerms=5, num=False):
+    """Performs 'num' cycles of top co-occurrence search and returns results.
 
     Keyword arguments:
+    numTerms (int) -- number of associated terms in result INCLUDING query
     num (int) -- number of cycles; if False, terms are selected elsewhere
-    nTerms (int) -- number of associated terms in result EXCLUDING query
-    fullRandom (bool) -- make it True for all possible terms and False for
-    co-occurring terms
-
+    
     """
     if num:
       self.buildTermsToProc(num)
-    results = []
+    results2 = []
     for term in self.termsToProc:
-      k = self.db[term].keys()
-      ls = []
-      if fullRandom:
-        sample = self.db.keys()
-        sample.remove(term)
-      else:
-        sample = self.db[term].keys()
-      if len(k) > nTerms:
-        ls = random.sample(sample, nTerms)
-      else:
-        ls = random.sample(sample, len(k))
+      ls = self.topN([term], numTerms)
       ls.append(term)
-      results.append(ls)
-    return results
-
+      results2.append(ls)
+    return results2
 
 class Comparer(object):
   """Tests if image in 2nd database has matching terms to coherencer output.
@@ -443,7 +398,7 @@ class Comparer(object):
     self.db = self.loadDB()
     self.terms = self.db.keys()
 
-  def loadDB(self, path=os.path.join("D:\\", "pkb_by_lbl_test_split1")):
+  def loadDB(self, path="D:\\pkb_by_lbl_filter5_sept2013"):
     """Loads database from the specified path defaulting to my location.
 
     """
@@ -456,7 +411,7 @@ class Comparer(object):
 
     Keyword arguments:
     results (list of lists) -- list of 'coherent' terms from one of the
-    functions
+                               functions
     
     """
     c = self.compare
@@ -489,63 +444,4 @@ class Comparer(object):
     else:
       return False
 
-class Main(object):
-  """Runs all coherence algorithms and prints output.
 
-  Public functions:
-  run(numterms, numQueries, numTimes)
-
-  """
-  def __init__(self):
-    """Initializes both classes.
-
-    """
-    self.coh = Coherencer()
-    self.com = Comparer()
-
-  def run(self, numTerms, numQueries, numTimes):
-    """Runs each of the algorithms.
-
-    Keyword arguments:
-    numTerms (int) -- number of associated terms per query
-    numQueries (int) -- number of individual queries per round
-    numTimes (int) -- number of rounds
-
-    """
-    f = '{:<15}{:<15}{:<15}{:<15}{:<15}'
-    print f.format('Full Random', 'Part Random', 'Top N', 'New', 'New Top N')
-    for x in range(numTimes):
-      self.coh.buildTermsToProc(numQueries)
-
-      resRnd1 = self.coh.rndmN(numTerms, True)
-      resRnd2 = self.coh.rndmN(numTerms, False)
-      resTopN = self.coh.calcTopN(numTerms)
-      resNew1 = self.coh.askCycle(numTerms+1, 0.37, False) 
-      resNew2 = self.coh.askCycle(numTerms+1, 0.37, True) #0.36 for n = 4
-
-      totRnd1 = self.com.test(resRnd1)
-      totRnd2 = self.com.test(resRnd2)
-      totTopN = self.com.test(resTopN)
-      totNew1 = self.com.test(resNew1)
-      totNew2 = self.com.test(resNew2)
-
-      self.coh.reset()
-
-      print f.format(totRnd1, totRnd2, totTopN, totNew1, totNew2)
-
-if __name__ == '__main__':
-  m = Main()
-#  m.run(6, 1000, 20)
-
-##########
-##For Testing purposes
-
-  t = 0.25
-  while t < 0.45:
-    a = []
-    for x in range(100):
-      r = m.coh.askCycle(4, t, True, 1000)
-      a.append(m.com.test(r))
-    print t, sum(a)/100, max(a), min(a)
-    t += 0.01
-##########
