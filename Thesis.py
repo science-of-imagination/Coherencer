@@ -95,12 +95,9 @@ class Coherencer(object):
     self.queries = []
     self.numTerms = 0
     self.threshold = 0.0
-##    self.sThreshold = 0.0
     self.coTerms = []
     self.selTerms = []
     self.totals = []
-##    self.sTotals = []
-##    self.filterType = None
     self.best = (0, [])
 
   def buildPool(self, queries):
@@ -113,7 +110,6 @@ class Coherencer(object):
     pool = set(queries)
     #iterating the algorithm below increases the edge depth for search
     pool |= set([x for y in pool for x in self.db[y].keys()])
-    #pool |= set([x for y in pool for x in self.db[y].keys()])
     pool = [x for x in pool if x not in queries]
     return pool
 
@@ -150,7 +146,6 @@ class Coherencer(object):
     self.selTerms.extend(queries)
     self.numTerms = numTerms
     self.threshold = threshold
-##    self.sThreshold = sThreshold
     self.coTerms = self.buildPool(self.queries)
     self.selTerms.extend(self.selectTerms(seed))
     self.fill()
@@ -222,15 +217,8 @@ class Coherencer(object):
     if total > self.best[0]:
       self.best = (total, self.selTerms)
     if total > self.threshold:
-##      self.sTotals = numpy.std(self.matrix, 0) + numpy.std(self.matrix, 1)
-##      total2 = numpy.std(self.matrix)
-##      if total2 < self.sThreshold:
       return True
-##      else:
-##        self.filterType = 'std'
-##        return False
     else:
-##      self.filterType = 'avg'
       return False
 
 
@@ -244,12 +232,8 @@ class Coherencer(object):
     further terms in the pool, it returns False.
     
     """
-##    if self.filterType == 'avg':
     vals = [x for x in self.totals]
     r = False
-##    else:
-##      vals = [x for x in self.sTotals]
-##      r = True
     vals = zip(self.selTerms, vals)
     vals = sorted(vals, key=lambda x: x[1], reverse=r)
     self.selTerms.remove(vals[0][0])
