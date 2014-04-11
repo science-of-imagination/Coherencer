@@ -50,7 +50,7 @@ class SemNet(object):
   
   """
   def __init__(self, pathToDatabase='pkb_matrix_sept2013-2-Sem',
-               pathToIndices='pkb_k_index_nov2013-Sem.npy'):
+               pathToIndices='pkb_k_index_nov2013-Sem'):
     """Initializes the necessary components.
 
     Keyword arguments:
