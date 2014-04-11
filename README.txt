@@ -36,7 +36,8 @@ from Thesis import Coherencer as C, Comparer as Cm
 c = C()
 cm = Cm()
 
-results1 = s.askCycle(num=8372)
+#The first label in a result is the query
+results1 = s.askCycle(num=8372) 
 results2 = c.askCycle(num=8372)
 
 cm.test(results1)
