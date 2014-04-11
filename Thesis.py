@@ -23,9 +23,8 @@ This marks an alternate approach for dealing with context in the computational
 generation of images and 3D scenes.
 
 Classes:
-Coherencer() -- algorithms for generating coherent sets given query
+Coherencer(path) -- algorithms for generating coherent sets given query
 Comparer()   -- test algorithms
-Main()       -- faster use case of other two classes
 
 
 """
@@ -293,7 +292,7 @@ class Coherencer(object):
     """
     self.termsToProc = [x for x in random.sample(self.db.keys(), num)]
 
-  def askCycle(self, numTerms=5, threshold=0.23, #sThreshold=10,
+  def askCycle(self, numTerms=5, threshold=0.23,
                seed=True, num=False):
     """Performs 'num' cycles of ask() and returns results.
 
