@@ -15,6 +15,18 @@ Vertolli, M. O. & Davies, J. (2013). Visual imagination in context: Retrieving a
 Vertolli, M. O. & Davies, J. (2014). Coherence in the visual imagination: Local hill search outperforms Thagard’s connectionist model, Proceedings of the 36th Annual Conference of the Cognitive Science Society. Quebec City, QC: Cognitive Science Society.
 Vertolli, M. O., Breault, V., Ouellet, S., Somers, S., Gagné, J., & Davies, J. (2014). Theoretical assessment of the SOILIE model of the human imagination, Proceedings of the 36th Annual Conference of the Cognitive Science Society. Quebec City, QC: Cognitive Science Society.
 
+SemNet.py describes an implementation of Thagard's (2000) connectionist algorithm
+Thesis.py describes the Coherencer incremental algorithm and an evaluation function
+called Comparer.
+pkb_k_index_nov2013-Sem.npy is a pickled dictionary of labels and their indices
+pkb_matrix_sept2013-2 is a pickled dictionary of co-occurrence probabilities of
+the form {label1 : {label2-1 : probability, label2-2 : probability}, label2 : {...} ...}
+where matrix[label1][label2] returns the co-occurrence probability of two labels if
+it exists. If it does not exist, the labels do not co-occur.
+
+The required Python libraries for this to run are:
+NumPy (http://scipy.org/install.html)
+
 In order to use each of the algorithms, do the following:
 
 from SemNet import SemNet as S
