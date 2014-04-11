@@ -49,14 +49,13 @@ class SemNet(object):
            seedWithTop)
   
   """
-  def __init__(self, pathToDatabase='D:\\pkb_matrix_sept2013-2-Sem',
-               pathToIndices='D:\\pkb_k_index_nov2013-Sem.npy'):
+  def __init__(self, pathToDatabase='pkb_matrix_sept2013-2-Sem',
+               pathToIndices='pkb_k_index_nov2013-Sem.npy'):
     """Initializes the necessary components.
 
     Keyword arguments:
-    pathToDatabase (str) -- the path to the database ***Windows ONLY***
+    pathToDatabase (str) -- the path to the database
     pathToIndices (str) -- path to label indices for entire database
-                          ***Windows ONLY***
 
     db (dict of dicts) -- original Peekaboom database of co-occurrence
                           probabilities
@@ -81,7 +80,7 @@ class SemNet(object):
     """
     self.db = self.loadDB(pathToDatabase)
     self.neg = -0.14878295850321488
-    self.kindex = self.loadDB(pathToWeightDatabase)
+    self.kindex = self.loadDB(pathToIndices)
     self.wdb = numpy.ones([8372, 8372])*(self.neg)
     for key in self.kindex.items():
       for key2 in self.db[key[0]]:
@@ -177,7 +176,7 @@ class SemNet(object):
     self.qIndex = [ii(q) for q in self.queries]
     self.nodeLen = len(self.index)
     if reloadW:
-      self.w = self.loadW(self.index, self.neg, self.nodeLen)
+      self.w = self.loadW(self.index)
     self.aCur = numpy.ones([self.nodeLen,])*self.initA
     self.aNex = numpy.array([])
     self.diff = numpy.array([])
